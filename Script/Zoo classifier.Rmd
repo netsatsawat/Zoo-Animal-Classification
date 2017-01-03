@@ -1,0 +1,181 @@
+---
+title: "Zoo classification"
+author: "Satsawat N."
+date: "January 03, 2017"
+output:
+  html_document: default
+---
+
+## Zoo Animal Classification {.tabset}
+The aim is to use Machine Learning Methods to Correctly Classify Animals Based Upon Attributes.
+
+### Overview
+
+This data is available from [Kaggle](https://www.kaggle.com/uciml/zoo-animal-classification), which is published by [UCI ML](https://www.kaggle.com/uciml).
+
+
+```{r setup, include=FALSE, echo=FALSE, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+library(caret)
+library(gridExtra)
+library(seriation)
+
+rm(list=ls())
+my.dir <- "D:/Projects/5.0 Personal project/19.0 Zoo classification/"
+setwd(my.dir)
+
+class.data <- read.csv("class.csv", header=T, sep=",", stringsAsFactors=F)
+raw.data <- read.csv("zoo.csv", header=T, sep=",", stringsAsFactors=F)
+
+colnames(raw.data) <- tolower(colnames(raw.data))
+```
+
+There are 2 datasets, namely: 
+
+1. Class dataset - this provides the class name to the class type as well as the list of animals which are corresponding to the class.
+
+```{r sample class, echo=FALSE}
+head(class.data,2)
+```
+
+2. Zoo - this data consists of the animal names with their features and the class which they are belong. This is what we trying to predict.
+
+```{r sample zoo, echo=FALSE}
+head(raw.data, 2)
+```
+
+Note that we can use these 2 datasets to join each other to get full information.
+
+```{r left join, echo=TRUE, eval=FALSE}
+zoo.data <- merge(x = raw.data, y = class.data, by = "class_type", all.x = TRUE)
+```
+
+```{r sample join, echo=FALSE}
+# Given class_type is what we will use, let's factor this variable
+colnames(class.data) <- c("class_type", 
+                          "no_of_animal_species_in_class", 
+                          "class_name", 
+                          "animal_name"
+                          )
+
+class.data <- select(class.data, 
+                     class_type,
+                     class_name)
+
+raw.data$class_type <- as.factor(raw.data$class_type)
+zoo.data <- merge(x = raw.data, y = class.data, by = "class_type", all.x = TRUE)
+head(zoo.data, 3)
+rm(raw.data, class.data)
+```
+
+
+### Visualize the data
+
+We will visualize the provided features in the datasets for each class name. Note, we can join the class_name from class dataset to the zoo dataset. Below is the code snippet I used - you may need to manipulate the column names a bit.
+
+
+```{r visual, echo=FALSE}
+
+plotHist <- function(df, i) {
+  data <- data.frame(x=df[[i]])
+  p <- ggplot(data=data, aes(x=factor(x))) + 
+    stat_count() + 
+    xlab(colnames(df)[i]) + 
+    ggtitle(colnames(df)[i]) +
+    theme_bw() + 
+    facet_wrap(~df[[19]]) +
+    theme(axis.text.x = element_text(angle = 90, hjust =1))
+  return (p)
+}
+
+lets.plot <- function(df, fun, ii, ncol=3) {
+  pp <- list()
+  for (i in ii) {
+    p <- fun(df=df, i=i)
+    pp <- c(pp, list(p))
+  }
+  do.call("grid.arrange", c(pp, ncol=ncol))
+}
+
+convert.to.numeric <- function(df, lst){
+  for (i in lst){
+    df[[i]] <- as.numeric(df[[i]])
+  }
+  return(df)
+}
+
+int.list <- names(zoo.data)[which(sapply(zoo.data, is.integer))]
+zoo.data <- convert.to.numeric(zoo.data, int.list)
+
+rm(int.list)
+
+for(i in seq(3,18,1)) {
+  lets.plot(zoo.data, fun=plotHist, ii=i, ncol=1)
+}
+
+```
+
+
+### Supervised learning
+
+Let's try to build supervised machine learning model. In this one, I will use **SVM** from [e1071](https://cran.r-project.org/web/packages/e1071/e1071.pdf) library to build the model.
+
+Setting up the training (70%) and testing (30%) datasets. 
+
+```{r train data prep, eval=FALSE}
+intraining <- createDataPartition(y=zoo.data$class_type, p=0.7, list=F)
+train.batch <- zoo.data[intraining,]
+test.batch <- zoo.data[-intraining,]
+```
+
+Before going in the model part, due to the dataset size, I would like to do a quick check on each class sizing.
+
+```{r quick check, echo=FALSE}
+intraining <- createDataPartition(y=zoo.data$class_type, p=0.7, list=F)
+train.batch <- zoo.data[intraining,]
+test.batch <- zoo.data[-intraining,]
+cat("----- Training batch ------")
+table(train.batch$class_type)
+
+cat("----- Testing batch -----")
+table(test.batch$class_type)
+```
+
+Okay, this looks fine to me. Let's dive to the model set up part.
+
+```{r svm, echo=FALSE}
+library(e1071)
+train.batch <- select(train.batch,
+                      -animal_name,
+                      -class_name)
+
+train.x <- select(train.batch,
+            -class_type)
+
+train.y <- train.batch$class_type
+
+set.seed(501)
+```
+
+```{r svm2}
+svm.model <- svm(class_type ~ ., 
+                 data=train.batch,
+                 kernel = "radial")
+
+
+summary(svm.model)
+
+test.x <- select(test.batch,
+            -class_type,
+            -animal_name,
+            -class_name)
+
+test.y <- test.batch$class_type
+
+test.pred <- predict(svm.model, test.x)
+confusionMatrix(test.pred, test.y)
+```
+
+
+
